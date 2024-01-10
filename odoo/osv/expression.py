@@ -1143,6 +1143,16 @@ class expression(object):
                 query = '(%s OR %s."%s" IS NULL)' % (query, table_alias, left)
 
             if need_wildcard:
+                ## XXXvlab: 2024-01-10 allow to use ilike with floats
+                ## expressed in a comma separating the decimals,
+                ## e.g. 1,5
+                if model._fields[left].type == "monetary":
+                    right_candidate = right.replace(",", ".")
+                    try:
+                        float(right_candidate)
+                        right = right_candidate
+                    except:
+                        pass
                 params = ['%%%s%%' % pycompat.to_text(right)]
             else:
                 params = [field.convert_to_column(right, model, validate=False)]
