@@ -303,6 +303,49 @@ def db_list(force=False, host=None):
         return []
     return db_filter(dbs, host)
 
+def matching_db(dbname, dbfilter, host):
+    ## fetch matching host
+    for host_reg, db_reg in dbfilter:
+        if host_reg is None:
+            dct = {}
+        else:
+            m = re.search(host_reg, host)
+            if not m:
+                continue
+            dct = m.groupdict()
+        interpolate_reg = db_reg % dct
+        if re.search(interpolate_reg, dbname, re.IGNORECASE):
+            return True
+    return False
+
+def adv_dbfilter(dbs, dbfilter, hostname):
+    from odoo.tools.safe_eval import safe_eval
+    try:
+        dbfilter_conf = safe_eval(dbfilter)
+    except Exception:
+        _logger.debug("dbfilter is standard: %r", dbfilter)
+        return None
+
+    try:
+        dbfilter_conf = [(k,v) for k,v in dbfilter_conf]
+    except ValueError:
+        _logger.warning(
+            "dbfilter was a valid python expression: %r, but is not "
+            "a python list of 2-tuples. Ignoring."
+            % dbfilter_conf)
+        return None
+
+    _logger.debug("Applying DBFILTER %r to host: %r", dbfilter, hostname)
+    try:
+        dbs = [d for d in dbs if matching_db(d, dbfilter_conf, hostname)]
+    except Exception as e:
+        _logger.warning(
+            "dbfilter was a valid python expression: %r, "
+            "but something went wrong: %r. Ignoring."
+            % (dbfilter_conf, e))
+        return None
+    return dbs
+
 def db_filter(dbs, host=None):
     """
     Return the subset of ``dbs`` that match the dbfilter or the dbname
@@ -325,6 +368,9 @@ def db_filter(dbs, host=None):
         if host is None:
             host = request.httprequest.environ.get('HTTP_HOST', '')
         host = host.partition(':')[0]
+        adv_dbfilter_dbs = adv_dbfilter(dbs, config['dbfilter'], host)
+        if adv_dbfilter_dbs is not None:
+            return adv_dbfilter_dbs
         if host.startswith('www.'):
             host = host[4:]
         domain = host.partition('.')[0]
